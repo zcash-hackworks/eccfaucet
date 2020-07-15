@@ -1,0 +1,48 @@
+<h1><a href="/">zFaucet</a></h1>
+<div id="links">
+    <ul style="list-style-type: none;">
+        <li style="display: inline-block;"><a href="/balance">balance</a></li>
+        <li style="display: inline-block;"><a href="/addresses">addresses</a></li>
+        <li style="display: inline-block;"><a href="/ops/status">ops</a></li>
+    </ul>
+</div>
+<div id="header">
+    <ul>
+        <li>Current Height:{{.Z.CurrentHeight}}</li>
+        <li>Zcashd Version:{{.Z.ZcashdVersion}}</li>
+        <li>Zcashd Network:{{.Z.ZcashNetwork}}</li>
+    </ul>
+</div>
+<div id="main">
+    <form method="POST" action="/">
+        <label>Address</label><input name="address" type="text" value="Testnet receiveing address" />
+        <input type="submit" value="submit" />
+    </form>
+    <div id="msg">
+        {{.Msg}}
+    </div>
+    <div id="tapRequests">
+        <h2>Tap Requests</h2>
+        {{range $k, $v := .Z.TapRequests}}
+        <div>
+            <b>NetworkAddress: </b>{{$v.NetworkAddress}}</br>
+            <b>WalletAddress: </b>{{$v.WalletAddress}}</br>
+            <b>Requested at: </b>{{$v.RequestedAt.Format "Mon, 02 Jan 2006 15:04:05 MST	"}}</br>
+        </div>
+    <hr>
+        {{end}}
+    </div>
+</div>    
+    <div id="ops">
+            <h2>Operations</h2>
+            {{range $k, $v := .Z.Operations}}
+            <div>
+                <b>Updated at: </b>{{$v.UpdatedAt.Format "Mon, 02 Jan 2006 15:04:05 MST	"}}</br>
+                <span class="{{$v.Status}}"><b>opid: </b>{{$k}}</span></br>
+                <b>Status: </b>{{$v.Status}}</br>
+                <b>Transaction ID: </b>{{$v.TxID}}</br>
+            </div>
+        <hr>
+            {{end}}
+    </div>
+</div>
