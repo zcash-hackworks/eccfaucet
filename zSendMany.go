@@ -36,6 +36,10 @@ func isTestnetSaplingZaddr(addr string) bool {
 	return matched
 }
 
+func checkSourceAddress(rAddress string) error {
+
+	return nil
+}
 func checkFaucetAddress(checkAddr string) error {
 	switch {
 	case checkAddr == "":

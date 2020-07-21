@@ -22,6 +22,7 @@ import (
 )
 
 const tapAmount = 1.0
+const tapWaitMinutes = 2
 
 type TapRequest struct {
 	NetworkAddress string
@@ -80,6 +81,21 @@ type SendAmount struct {
 type SendAmountMemo struct {
 	SendAmount
 	Memo string
+}
+
+func (z *Zfaucet) ClearCache() {
+	for {
+		now := time.Now()
+		fmt.Printf("Clearing cache: %d\n", len(z.TapRequests))
+		for _, t := range z.TapRequests {
+			fmt.Printf("Checking RemoteAddress: '%#v' - '%#v'\n", t.NetworkAddress, t.RequestedAt)
+			diff := now.Sub(t.RequestedAt)
+			if diff.Minutes() > tapWaitMinutes {
+				fmt.Printf("Old entry! : %#v\n", t)
+			}
+		}
+		time.Sleep(time.Second * 60 * tapWaitMinutes)
+	}
 }
 
 func (z *Zfaucet) WaitForOperation(opid string) (os OperationStatus, err error) {
@@ -228,6 +244,8 @@ func main() {
 	}
 	z.ZcashdVersion = strconv.Itoa(zVersion.Version)
 
+	go z.ClearCache()
+
 	box := packr.NewBox("./templates")
 	z.ZfaucetHTML, err = box.FindString("zfaucet.html")
 	if err != nil {
@@ -267,6 +285,16 @@ func (z *Zfaucet) home(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPost:
+		for _, n := range z.TapRequests {
+			fmt.Printf("Checking RemoteAddress: '%#v' - '%#v'\n", r.RemoteAddr, n.NetworkAddress)
+			if n.NetworkAddress == r.RemoteAddr {
+				tData.Msg = fmt.Sprintf("You may only tap the faucet every %d minutes\nPlease try again later\n", tapWaitMinutes)
+				break
+			} else {
+				fmt.Printf("It doesn't match... \n")
+			}
+
+		}
 		if err := checkFaucetAddress(r.FormValue("address")); err != nil {
 			tData.Msg = fmt.Sprintf("Invalid address: %s", err)
 			break
