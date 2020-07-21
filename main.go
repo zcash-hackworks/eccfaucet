@@ -18,6 +18,7 @@ import (
 	"github.com/gobuffalo/packr"
 	"github.com/kelseyhightower/envconfig"
 	_ "github.com/lib/pq"
+	"github.com/muesli/cache2go"
 	"github.com/ybbus/jsonrpc"
 )
 
@@ -69,6 +70,7 @@ type Zfaucet struct {
 	ZcashNetwork     string
 	FundingAddress   string
 	TapRequests      []*TapRequest
+	TapCache         *cache2go.CacheTable
 	ZfaucetHTML      string
 }
 
@@ -95,6 +97,27 @@ func (z *Zfaucet) ClearCache() {
 			}
 		}
 		time.Sleep(time.Second * 60 * tapWaitMinutes)
+	}
+}
+
+func (z *Zfaucet) UpdateZcashInfo() {
+	for {
+		z.UpdatedChainInfo = time.Now()
+		zChainInfo, err := getBlockchainInfo(z.RPCConnetion)
+		if err != nil {
+			fmt.Printf("Failed to get blockchaininfo: %s\n", err)
+		} else {
+			z.CurrentHeight = zChainInfo.Blocks
+			z.ZcashNetwork = zChainInfo.Chain
+		}
+		zVersion, err := getInfo(z.RPCConnetion)
+		if err != nil {
+			fmt.Printf("Failed to getinfo: %s\n", err)
+		} else {
+			z.ZcashdVersion = strconv.Itoa(zVersion.Version)
+		}
+		fmt.Println("Updated Zcashd Info")
+		time.Sleep(time.Second * 30)
 	}
 }
 
@@ -176,11 +199,13 @@ func (z *Zfaucet) ZSendManyFaucet(remoteAddr string, remoteWallet string) (opSta
 	if opStatus.Status != "success" {
 		return opStatus, fmt.Errorf("Failed to send funds: %s", err)
 	}
-	z.TapRequests = append(z.TapRequests, &TapRequest{
+	tapRequest := &TapRequest{
 		NetworkAddress: remoteAddr,
 		WalletAddress:  remoteWallet,
 		RequestedAt:    time.Now(),
-	})
+	}
+	z.TapCache.Add(remoteAddr, tapWaitMinutes*60*time.Second, tapRequest)
+	z.TapRequests = append(z.TapRequests, tapRequest)
 	return opStatus, err
 
 }
@@ -224,6 +249,7 @@ func main() {
 
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(zConfig.RPCUser + ":" + zConfig.RPCPassword))
 	var z Zfaucet
+	z.TapCache = cache2go.Cache("tapRequests")
 	z.FundingAddress = zConfig.FundingAddress
 	z.Operations = make(map[string]OperationStatus)
 	z.RPCConnetion = jsonrpc.NewClientWithOpts("http://"+zConfig.RPCHost+":"+zConfig.RPCPort,
@@ -232,19 +258,8 @@ func main() {
 				"Authorization": "Basic " + basicAuth,
 			}})
 
-	zChainInfo, err := getBlockchainInfo(z.RPCConnetion)
-	if err != nil {
-		log.Fatalf("Failed to get blockchaininfo: %s", err)
-	}
-	z.CurrentHeight = zChainInfo.Blocks
-	z.ZcashNetwork = zChainInfo.Chain
-	zVersion, err := getInfo(z.RPCConnetion)
-	if err != nil {
-		log.Fatalf("Failed to getinfo: %s", err)
-	}
-	z.ZcashdVersion = strconv.Itoa(zVersion.Version)
-
 	go z.ClearCache()
+	go z.UpdateZcashInfo()
 
 	box := packr.NewBox("./templates")
 	z.ZfaucetHTML, err = box.FindString("zfaucet.html")
@@ -285,15 +300,13 @@ func (z *Zfaucet) home(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPost:
-		for _, n := range z.TapRequests {
-			fmt.Printf("Checking RemoteAddress: '%#v' - '%#v'\n", r.RemoteAddr, n.NetworkAddress)
-			if n.NetworkAddress == r.RemoteAddr {
-				tData.Msg = fmt.Sprintf("You may only tap the faucet every %d minutes\nPlease try again later\n", tapWaitMinutes)
-				break
-			} else {
-				fmt.Printf("It doesn't match... \n")
-			}
-
+		res, err := z.TapCache.Value(r.RemoteAddr)
+		if err == nil {
+			fmt.Println("Found value in cache:", res.Data().(*TapRequest).NetworkAddress)
+			tData.Msg = fmt.Sprintf("You may only tap the faucet every %d minutes\nPlease try again later\n", tapWaitMinutes)
+			break
+		} else {
+			fmt.Println("Error retrieving value from cache:", err)
 		}
 		if err := checkFaucetAddress(r.FormValue("address")); err != nil {
 			tData.Msg = fmt.Sprintf("Invalid address: %s", err)
