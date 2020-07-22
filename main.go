@@ -31,7 +31,7 @@ type TapRequest struct {
 	WalletAddress  string
 	RequestedAt    time.Time
 }
-type ZfaucetConfig struct {
+type ECCfaucetConfig struct {
 	ListenPort     string
 	ListenAddress  string
 	RPCUser        string
@@ -41,27 +41,27 @@ type ZfaucetConfig struct {
 	FundingAddress string
 }
 
-func (zConfig *ZfaucetConfig) checkConfig() error {
-	if zConfig.ListenPort == "" {
-		zConfig.ListenPort = "3000"
+func (c *ECCfaucetConfig) checkConfig() error {
+	if c.ListenPort == "" {
+		c.ListenPort = "3000"
 	}
-	if zConfig.ListenAddress == "" {
-		zConfig.ListenPort = "127.0.0.1"
+	if c.ListenAddress == "" {
+		c.ListenPort = "127.0.0.1"
 	}
-	if zConfig.RPCHost == "" {
-		zConfig.ListenPort = "localhost"
+	if c.RPCHost == "" {
+		c.ListenPort = "localhost"
 	}
-	if zConfig.ListenPort == "" {
-		zConfig.ListenPort = "3000"
+	if c.ListenPort == "" {
+		c.ListenPort = "3000"
 	}
-	if zConfig.FundingAddress == "" {
-		return fmt.Errorf("ZFAUCET_FUNDINGADDRESS is required")
+	if c.FundingAddress == "" {
+		return fmt.Errorf("ECCFAUCET_FUNDINGADDRESS is required")
 	}
 	return nil
 }
 
-// Zfaucet holds a zfaucet configuration
-type Zfaucet struct {
+// ECCFaucet holds a zfaucet configuration
+type ECCFaucet struct {
 	RPCConnetion     jsonrpc.RPCClient
 	CurrentHeight    int
 	UpdatedChainInfo time.Time
@@ -72,7 +72,7 @@ type Zfaucet struct {
 	FundingAddress   string
 	TapRequests      []*TapRequest
 	TapCache         *cache2go.CacheTable
-	ZfaucetHTML      string
+	HomeHTML         string
 }
 
 type SendAmount struct {
@@ -86,7 +86,7 @@ type SendAmountMemo struct {
 	Memo string
 }
 
-func (z *Zfaucet) ClearCache() {
+func (z *ECCFaucet) ClearCache() {
 	for {
 		now := time.Now()
 		fmt.Printf("Clearing cache: %d\n", len(z.TapRequests))
@@ -101,7 +101,7 @@ func (z *Zfaucet) ClearCache() {
 	}
 }
 
-func (z *Zfaucet) UpdateZcashInfo() {
+func (z *ECCFaucet) UpdateZcashInfo() {
 	for {
 		z.UpdatedChainInfo = time.Now()
 		zChainInfo, err := getBlockchainInfo(z.RPCConnetion)
@@ -122,7 +122,7 @@ func (z *Zfaucet) UpdateZcashInfo() {
 	}
 }
 
-func (z *Zfaucet) WaitForOperation(opid string) (os OperationStatus, err error) {
+func (z *ECCFaucet) WaitForOperation(opid string) (os OperationStatus, err error) {
 	var opStatus []struct {
 		CreationTime int    `json:"creation_time"`
 		ID           string `json:"id"`
@@ -165,14 +165,14 @@ func (z *Zfaucet) WaitForOperation(opid string) (os OperationStatus, err error) 
 	return os, errors.New("Timeout waiting for operations status")
 }
 
-func (z *Zfaucet) ValidateFundingAddress() (bool, error) {
+func (z *ECCFaucet) ValidateFundingAddress() (bool, error) {
 	if z.FundingAddress == "" {
 		return false, errors.New("FundingAddressis required")
 	}
 	return true, nil
 }
 
-func (z *Zfaucet) ZSendManyFaucet(remoteAddr string, remoteWallet string) (opStatus OperationStatus, err error) {
+func (z *ECCFaucet) ZSendManyFaucet(remoteAddr string, remoteWallet string) (opStatus OperationStatus, err error) {
 	var op *string
 	amountEntry := SendAmount{
 		Address: remoteWallet,
@@ -238,7 +238,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	var zConfig ZfaucetConfig
+	var zConfig ECCfaucetConfig
 	err := envconfig.Process("zfaucet", &zConfig)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -249,7 +249,7 @@ func main() {
 	fmt.Printf("zfaucet: %#v\n", zConfig)
 
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(zConfig.RPCUser + ":" + zConfig.RPCPassword))
-	var z Zfaucet
+	var z ECCFaucet
 	z.TapCache = cache2go.Cache("tapRequests")
 	z.FundingAddress = zConfig.FundingAddress
 	z.Operations = make(map[string]OperationStatus)
@@ -263,7 +263,7 @@ func main() {
 	go z.UpdateZcashInfo()
 
 	box := packr.NewBox("./templates")
-	z.ZfaucetHTML, err = box.FindString("zfaucet.html")
+	z.HomeHTML, err = box.FindString("eccfaucet.html")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -290,10 +290,10 @@ type OperationStatus struct {
 }
 
 // home is the default request handler
-func (z *Zfaucet) home(w http.ResponseWriter, r *http.Request) {
+func (z *ECCFaucet) home(w http.ResponseWriter, r *http.Request) {
 	// tData is the html template data
 	tData := struct {
-		Z   *Zfaucet
+		Z   *ECCFaucet
 		Msg string
 	}{
 		z,
@@ -321,7 +321,7 @@ func (z *Zfaucet) home(w http.ResponseWriter, r *http.Request) {
 		tData.Msg = fmt.Sprintf("Successfully submitted operation, transaction: %s", opStatus.TxID)
 	}
 	w.Header().Set("Content-Type", "text/html")
-	tmpl, err := template.New("name").Parse(z.ZfaucetHTML)
+	tmpl, err := template.New("name").Parse(z.HomeHTML)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 	}
@@ -329,7 +329,7 @@ func (z *Zfaucet) home(w http.ResponseWriter, r *http.Request) {
 }
 
 // OKMiddleware determines if a request is allowed before execution
-func (z *Zfaucet) OKMiddleware(next http.Handler) http.Handler {
+func (z *ECCFaucet) OKMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Our middleware logic goes here...
 		next.ServeHTTP(w, r)
@@ -337,7 +337,7 @@ func (z *Zfaucet) OKMiddleware(next http.Handler) http.Handler {
 }
 
 // Balance
-func (z *Zfaucet) balance(w http.ResponseWriter, r *http.Request) {
+func (z *ECCFaucet) balance(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var totalBalance *z_gettotalbalance
 	if err := z.RPCConnetion.CallFor(&totalBalance, "z_gettotalbalance"); err != nil {
@@ -353,10 +353,10 @@ func (z *Zfaucet) balance(w http.ResponseWriter, r *http.Request) {
 }
 
 // opsStatus
-func (z *Zfaucet) opsStatus(w http.ResponseWriter, r *http.Request) {
+func (z *ECCFaucet) opsStatus(w http.ResponseWriter, r *http.Request) {
 	// tData is the html template data
 	tData := struct {
-		Z    *Zfaucet
+		Z    *ECCFaucet
 		Ops  *[]string
 		Type string
 	}{
@@ -369,7 +369,7 @@ func (z *Zfaucet) opsStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html")
-	tmpl, err := template.New("name").Parse(z.ZfaucetHTML)
+	tmpl, err := template.New("name").Parse(z.HomeHTML)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 	}
@@ -377,7 +377,7 @@ func (z *Zfaucet) opsStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // addresses
-func (z *Zfaucet) addresses(w http.ResponseWriter, r *http.Request) {
+func (z *ECCFaucet) addresses(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var addresses []WalletAddress
 	var zlist *[]string
