@@ -1,0 +1,22 @@
+---
+version: '2'
+
+services:
+  zcashd:
+    image: electriccoinco/zcashd:latest
+    command: "-equihashsolver=tromp -genproclimit=1 -mineraddress=$ZFAUCET_FUNDINGADDRESS"
+    volumes:
+      - $ZCASHD_DATADIR:/srv/zcashd/.zcash
+      - $ZCASHD_PARMDIR:/srv/zcashd/.zcash-params
+    env_file:
+      - .env
+    mem_limit: 6G
+    ports:
+      - "127.0.0.1:$ZCASHD_RPCPORT:$ZCASHD_RPCPORT"
+  zfaucet:
+    image: doubtingben/zfaucet
+    env_file:
+      - .env
+    mem_limit: 512M
+    ports:
+      - "$ZFAUCET_LISTENPORT:$ZFAUCET_LISTENPORT"
