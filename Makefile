@@ -20,7 +20,12 @@ all: build
 
 # Build binary
 build:
+	# packr util for compiling in templates
+	go get -u github.com/gobuffalo/packr/packr
+	packr --verbose
 	CGO_ENABLED=0 go build $(LDFLAGS) 
-
+build_docker:
+	docker build . -t electriccoinco/eccfaucet
+	docker push electriccoinco/eccfaucet
 test:
 	go test -v ./...

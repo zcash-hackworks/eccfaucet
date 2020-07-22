@@ -20,3 +20,4 @@ services:
     mem_limit: 512M
     ports:
       - "$ECCFAUCET_LISTENPORT:$ECCFAUCET_LISTENPORT"
+

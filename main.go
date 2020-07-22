@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
@@ -39,6 +40,8 @@ type ECCfaucetConfig struct {
 	RPCHost        string
 	RPCPort        string
 	FundingAddress string
+	TLSCertFile    string
+	TLSKeyFile     string
 }
 
 func (c *ECCfaucetConfig) checkConfig() error {
@@ -56,6 +59,10 @@ func (c *ECCfaucetConfig) checkConfig() error {
 	}
 	if c.FundingAddress == "" {
 		return fmt.Errorf("ECCFAUCET_FUNDINGADDRESS is required")
+	}
+	if (c.TLSCertFile == "" && c.TLSKeyFile != "") ||
+		(c.TLSCertFile != "" && c.TLSKeyFile == "") {
+		return fmt.Errorf("ECCFAUCET_TLSCERTFILE and ECCFAUCET_TLSKEYFILE are both required")
 	}
 	return nil
 }
@@ -104,18 +111,18 @@ func (z *ECCFaucet) ClearCache() {
 func (z *ECCFaucet) UpdateZcashInfo() {
 	for {
 		z.UpdatedChainInfo = time.Now()
-		zChainInfo, err := getBlockchainInfo(z.RPCConnetion)
-		if err != nil {
+		var blockChainInfo *GetBlockchainInfo
+		if err := z.RPCConnetion.CallFor(&blockChainInfo, "getblockchaininfo"); err != nil {
 			fmt.Printf("Failed to get blockchaininfo: %s\n", err)
 		} else {
-			z.CurrentHeight = zChainInfo.Blocks
-			z.ZcashNetwork = zChainInfo.Chain
+			z.CurrentHeight = blockChainInfo.Blocks
+			z.ZcashNetwork = blockChainInfo.Chain
 		}
-		zVersion, err := getInfo(z.RPCConnetion)
-		if err != nil {
-			fmt.Printf("Failed to getinfo: %s\n", err)
+		var info *GetBlockInfo
+		if err := z.RPCConnetion.CallFor(&info, "getinfo"); err != nil {
+			fmt.Printf("Failed to get getinfo: %s\n", err)
 		} else {
-			z.ZcashdVersion = strconv.Itoa(zVersion.Version)
+			z.ZcashdVersion = strconv.Itoa(info.Version)
 		}
 		fmt.Println("Updated Zcashd Info")
 		time.Sleep(time.Second * 30)
@@ -239,7 +246,7 @@ func main() {
 	}
 
 	var zConfig ECCfaucetConfig
-	err := envconfig.Process("zfaucet", &zConfig)
+	err := envconfig.Process("eccfaucet", &zConfig)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -277,7 +284,30 @@ func main() {
 	mux.Handle("/addresses", z.OKMiddleware(addressHandler))
 	mux.Handle("/ops/status", z.OKMiddleware(opsStatusHandler))
 	log.Printf("Listening on :%s...\n", zConfig.ListenPort)
-	err = http.ListenAndServe(zConfig.ListenAddress+":"+zConfig.ListenPort, mux)
+	if zConfig.TLSCertFile != "" && zConfig.TLSKeyFile != "" {
+		// https://gist.github.com/denji/12b3a568f092ab951456
+		cfg := &tls.Config{
+			MinVersion:               tls.VersionTLS12,
+			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+			PreferServerCipherSuites: true,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			},
+		}
+		srv := &http.Server{
+			Addr:         zConfig.ListenAddress + ":" + zConfig.ListenPort,
+			Handler:      mux,
+			TLSConfig:    cfg,
+			TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+		}
+		err = srv.ListenAndServeTLS(zConfig.TLSCertFile, zConfig.TLSKeyFile)
+
+	} else {
+		err = http.ListenAndServe(zConfig.ListenAddress+":"+zConfig.ListenPort, mux)
+	}
 	log.Fatal(err)
 }
 
