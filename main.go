@@ -24,6 +24,7 @@ import (
 
 const tapAmount = 1.0
 const tapWaitMinutes = 2
+const opStatusWaitSeconds = 120
 
 type TapRequest struct {
 	NetworkAddress string
@@ -138,7 +139,7 @@ func (z *Zfaucet) WaitForOperation(opid string) (os OperationStatus, err error) 
 	fmt.Printf("opList: %s\n", opList)
 	fmt.Printf("parentList: %s\n", parentList)
 	// Wait for a few seconds for the operational status to become available
-	for i := 0; i < 10; i++ {
+	for i := 0; i < opStatusWaitSeconds; i++ {
 		if err := z.RPCConnetion.CallFor(
 			&opStatus,
 			"z_getoperationresult",
@@ -317,7 +318,7 @@ func (z *Zfaucet) home(w http.ResponseWriter, r *http.Request) {
 			tData.Msg = fmt.Sprintf("Failed to send funds: %s", err)
 			break
 		}
-		tData.Msg = fmt.Sprintf("Successfully submitted operation: %s", opStatus)
+		tData.Msg = fmt.Sprintf("Successfully submitted operation, transaction: %s", opStatus.TxID)
 	}
 	w.Header().Set("Content-Type", "text/html")
 	tmpl, err := template.New("name").Parse(z.ZfaucetHTML)
@@ -353,18 +354,26 @@ func (z *Zfaucet) balance(w http.ResponseWriter, r *http.Request) {
 
 // opsStatus
 func (z *Zfaucet) opsStatus(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var ops *[]string
-	if err := z.RPCConnetion.CallFor(&ops, "z_listoperationids"); err != nil {
+	// tData is the html template data
+	tData := struct {
+		Z    *Zfaucet
+		Ops  *[]string
+		Type string
+	}{
+		z,
+		nil,
+		"opsStatus",
+	}
+	if err := z.RPCConnetion.CallFor(&tData.Ops, "z_listoperationids"); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	out, err := json.Marshal(ops)
+	w.Header().Set("Content-Type", "text/html")
+	tmpl, err := template.New("name").Parse(z.ZfaucetHTML)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
-		return
 	}
-	fmt.Fprintf(w, string(out))
+	tmpl.Execute(w, tData)
 }
 
 // addresses
