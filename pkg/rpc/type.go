@@ -1,7 +1,10 @@
-package main
+package rpc
 
-// GetBlockchainInfo return the zcashd rpc `getblockchaininfo` status
-// https://zcash-rpc.github.io/getblockchaininfo.html
+// GetBlockInfo is the important getblockinfo response data
+type GetBlockInfo struct {
+	Version int
+}
+
 type GetBlockchainInfo struct {
 	Chain                string     `json:"chain"`
 	Blocks               int        `json:"blocks"`
@@ -16,15 +19,4 @@ type GetBlockchainInfo struct {
 type SoftFork struct {
 	ID      string `json:"id"`
 	Version int    `json:"version"`
-}
-
-type z_gettotalbalance struct {
-	Transparent string
-	Private     string
-	Total       string
-}
-
-type WalletAddress struct {
-	Address string
-	Notes   []string
 }
